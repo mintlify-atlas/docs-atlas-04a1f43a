@@ -1,0 +1,299 @@
+---
+title: Performance
+description: Vard's performance characteristics and benchmarks
+---
+
+Vard is designed for real-time validation with sub-millisecond latency. This page details performance characteristics, benchmarks, and why Vard is fast.
+
+## Benchmarks
+
+All benchmarks run on M-series MacBook (single core):
+
+| Metric            | Safe Inputs    | Malicious Inputs | Target              |
+| ----------------- | -------------- | ---------------- | ------------------- |
+| **Throughput**    | 34,108 ops/sec | 29,626 ops/sec   | > 20,000 ops/sec ✅ |
+| **Latency (p50)** | 0.021ms        | 0.031ms          | -                   |
+| **Latency (p95)** | 0.022ms        | 0.032ms          | -                   |
+| **Latency (p99)** | 0.026ms        | 0.035ms          | < 0.5ms ✅          |
+| **Bundle Size**   | -              | -                | < 10KB ✅           |
+| **Memory/Vard**   | < 100KB        | < 100KB          | -                   |
+
+<Note>
+  p99 latency measures the 99th percentile - meaning 99% of requests complete faster than this time.
+</Note>
+
+## Why Vard is Fast
+
+Vard achieves sub-millisecond performance through several architectural decisions:
+
+### 1. Pattern-Based Detection
+
+Vard uses pre-compiled regular expressions instead of LLM API calls:
+
+```typescript
+// Vard: < 0.5ms, fully local
+const safe = vard(userInput);
+
+// LLM-based: ~200ms, requires API call
+const safe = await llmSecurityCheck(userInput);
+```
+
+**Performance comparison:**
+
+| Approach         | Latency | Cost per request | Offline support |
+| ---------------- | ------- | ---------------- | --------------- |
+| Vard             | < 0.5ms | Free             | ✅              |
+| LLM-based        | ~200ms  | $0.001-0.01      | ❌              |
+| Rule-based WAF   | ~1-5ms  | Free             | ✅              |
+
+### 2. Pre-Compiled Regex
+
+All threat patterns are compiled at import time, not at runtime:
+
+```typescript
+// src/patterns/instruction.ts
+export const instructionPatterns: Pattern[] = [
+  {
+    regex: /ignore\s+(?:all\s+)?(?:previous\s+)?instructions/i,
+    severity: 0.9,
+    type: "instructionOverride",
+  },
+  // ... more patterns
+];
+```
+
+Patterns are defined once and reused for all validations, eliminating compilation overhead.
+
+### 3. Bounded Quantifiers (ReDoS Protection)
+
+All regex patterns use bounded quantifiers to prevent catastrophic backtracking:
+
+```typescript
+// ✅ SAFE - Bounded quantifiers
+/ignore\s+(?:all\s+)?(?:previous\s+)?instructions/i
+/\b(?:you\s+are\s+now|act\s+as)\s+.{1,50}/i
+
+// ❌ UNSAFE - Unbounded can cause ReDoS
+/(a+)+/
+/(.*)+ instructions/
+```
+
+<Tip>
+  Vard includes comprehensive ReDoS stress tests that validate patterns against adversarial input (10,000+ character repetitions). See `tests/redos.test.ts` for details.
+</Tip>
+
+### 4. Early Exit on Blocking Threats
+
+When configured to block threats, Vard exits immediately on first detection:
+
+```typescript
+// Stops on first blocking threat - no need to scan entire input
+const strict = vard.strict(); // All threats set to "block"
+strict.parse("ignore all instructions and continue...");
+// Throws immediately, doesn't process rest of input
+```
+
+### 5. Zero Network Latency
+
+Vard runs entirely in your application - no API calls, no network roundtrips:
+
+- **LLM-based detection:** 50-200ms network latency + API processing
+- **Vard:** 0ms network latency (fully local)
+
+### 6. Minimal Memory Allocation
+
+Vard avoids object allocation in hot paths:
+
+```typescript
+// Uses test() instead of match() when possible
+if (pattern.regex.test(input)) {
+  // Only allocate if threat detected
+}
+```
+
+Each Vard instance uses < 100KB of memory, making it suitable for high-concurrency scenarios.
+
+## Performance Comparison
+
+How Vard compares to alternative approaches:
+
+<Accordion title="vs. LLM-based Detection">
+  **Vard advantages:**
+  - 400x faster (< 0.5ms vs ~200ms)
+  - Zero cost (no API fees)
+  - Works offline
+  - Deterministic (same input = same result)
+  
+  **LLM advantages:**
+  - Higher accuracy (98%+ vs 90-95%)
+  - Catches semantic attacks
+  - No pattern updates needed
+  
+  **When to use Vard:** Real-time applications, high request volume, cost-sensitive, offline deployments.
+</Accordion>
+
+<Accordion title="vs. Rule-based WAF">
+  **Vard advantages:**
+  - Higher accuracy (90-95% vs 70-80%)
+  - LLM-specific threat patterns
+  - Better developer experience (TypeScript, chainable API)
+  - Smaller bundle size
+  
+  **WAF advantages:**
+  - Broader security coverage (SQL injection, XSS, etc.)
+  - Industry-tested patterns
+  - May integrate with existing infrastructure
+  
+  **When to use Vard:** LLM/AI-specific threats, TypeScript applications, need customization.
+</Accordion>
+
+<Accordion title="vs. No Validation">
+  **Vard advantages:**
+  - Blocks 90-95% of known attacks
+  - Minimal performance overhead (< 0.5ms)
+  - Privacy-first (no data leaves your app)
+  - Easy to integrate
+  
+  **No validation risks:**
+  - Prompt injection attacks succeed
+  - System prompt leakage
+  - Data exfiltration via role manipulation
+  - Delimiter injection confuses AI
+  
+  **When to use Vard:** Any LLM application accepting user input (highly recommended).
+</Accordion>
+
+## Scaling Characteristics
+
+Vard performance scales linearly with input length:
+
+```typescript
+// Benchmark results (p95 latency)
+const small = measure(500);   // ~500 chars  → 0.015ms
+const medium = measure(2500); // ~2500 chars → 0.042ms
+const large = measure(5000);  // ~5000 chars → 0.078ms
+
+// Scales roughly 5x for 10x input length
+```
+
+**Key scaling properties:**
+
+- **Linear with input length:** 2x longer input ≈ 2x processing time
+- **Constant per-instance memory:** Each Vard instance uses < 100KB regardless of input
+- **Parallel execution:** Multiple CPU cores can process validations in parallel
+- **No memory leaks:** Tested with 100,000+ repeated validations
+
+<Warning>
+  Very long inputs (> 10,000 characters) are rejected by default via `maxLength` configuration. This prevents DoS attacks while maintaining fast validation for typical use cases.
+</Warning>
+
+## Real-World Performance
+
+Typical production scenarios:
+
+### High-Throughput API (10,000 req/sec)
+
+```typescript
+const chatVard = vard.moderate();
+
+app.post('/api/chat', async (req, res) => {
+  // < 0.5ms validation overhead
+  const safeInput = chatVard.parse(req.body.message);
+  const response = await ai.generate(safeInput);
+  res.json({ response });
+});
+```
+
+**Impact:** Adds < 0.5ms to request latency. At 10,000 req/sec, Vard uses < 1 CPU core.
+
+### Streaming LLM Responses
+
+```typescript
+const chatVard = vard.moderate();
+
+app.post('/api/stream', async (req, res) => {
+  // Validate before streaming begins (< 0.5ms)
+  const safeInput = chatVard.parse(req.body.message);
+  
+  const stream = await ai.streamText(safeInput);
+  stream.pipe(res);
+});
+```
+
+**Impact:** Validation completes before first token, no impact on Time To First Byte (TTFB).
+
+### Batch Processing (1,000 messages)
+
+```typescript
+const chatVard = vard.moderate();
+
+// Process 1,000 messages in < 50ms
+const safeMessages = messages.map(msg => {
+  try {
+    return chatVard.parse(msg);
+  } catch (error) {
+    return null; // Skip malicious
+  }
+}).filter(Boolean);
+```
+
+**Impact:** 1,000 validations in ~30-50ms (20,000-30,000 ops/sec throughput).
+
+## Performance Tips
+
+<Tip>
+  **Reuse Vard instances:** Create once, use many times. Instance creation is cheap (~0.001ms), but reusing saves allocations.
+  
+  ```typescript
+  // ✅ Good - reuse instance
+  const chatVard = vard.moderate();
+  app.post('/chat', (req) => chatVard.parse(req.body.message));
+  
+  // ❌ Less efficient - creates new instance per request
+  app.post('/chat', (req) => vard.moderate().parse(req.body.message));
+  ```
+</Tip>
+
+<Tip>
+  **Use strict preset for maximum performance:** Strict mode can exit early on first threat, making it faster for malicious inputs.
+  
+  ```typescript
+  const strict = vard.strict(); // All threats blocked, early exit
+  ```
+</Tip>
+
+<Tip>
+  **Profile with benchmarks:** Use `tests/benchmarks.test.ts` as a template to benchmark your specific use case.
+</Tip>
+
+## Monitoring Performance
+
+Track Vard performance in production:
+
+```typescript
+const chatVard = vard.moderate();
+
+app.post('/api/chat', (req, res) => {
+  const start = performance.now();
+  
+  try {
+    const safeInput = chatVard.parse(req.body.message);
+    const elapsed = performance.now() - start;
+    
+    // Log if validation is slow (> 1ms)
+    if (elapsed > 1) {
+      console.warn(`Slow validation: ${elapsed.toFixed(2)}ms for ${req.body.message.length} chars`);
+    }
+    
+    // ... process safeInput
+  } catch (error) {
+    // ... handle error
+  }
+});
+```
+
+## Next Steps
+
+- **[Security Best Practices](/advanced/security-best-practices)** - Secure your production deployment
+- **[Defense in Depth](/advanced/defense-in-depth)** - Combine Vard with other security layers
+- **[Limitations](/advanced/limitations)** - Understand when to use additional tools

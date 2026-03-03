@@ -1,0 +1,294 @@
+---
+title: "VardConfig"
+description: "Internal configuration object for VardBuilder"
+---
+
+`VardConfig` is the internal configuration object used by `VardBuilder`. Most users don't interact with this type directly—use the chainable builder methods instead.
+
+## TypeScript Definition
+
+```typescript
+export interface VardConfig {
+  threshold: number;
+  maxLength: number;
+  customDelimiters: string[];
+  customPatterns: Pattern[];
+  threatActions: Record<ThreatType, ThreatAction>;
+  onWarn?: (threat: Threat) => void;
+}
+```
+
+## Fields
+
+<ResponseField name="threshold" type="number" required>
+  Detection threshold from 0 to 1.
+  
+  Only threats with `severity >= threshold` are processed.
+  
+  **Preset values:**
+  - Strict: `0.5`
+  - Moderate: `0.7` (default)
+  - Lenient: `0.85`
+  
+  ```typescript
+  vard().threshold(0.8);
+  ```
+</ResponseField>
+
+<ResponseField name="maxLength" type="number" required>
+  Maximum input length in characters.
+  
+  Inputs longer than this are rejected before pattern matching.
+  
+  **Default:** `10000`
+  
+  ```typescript
+  vard().maxLength(5000);
+  ```
+</ResponseField>
+
+<ResponseField name="customDelimiters" type="string[]" required>
+  Custom prompt delimiters to protect against.
+  
+  Delimiters are **case-sensitive** and matched exactly.
+  
+  **Examples:** `['SYSTEM:', 'USER:', 'CONTEXT:']`
+  
+  ```typescript
+  vard().delimiters(['SYSTEM:', 'USER:']);
+  ```
+</ResponseField>
+
+<ResponseField name="customPatterns" type="Pattern[]" required>
+  Custom detection patterns added to built-in patterns.
+  
+  Each pattern has `regex`, `severity`, and `type` fields.
+  
+  See [Pattern](/api/types/pattern) for details.
+  
+  ```typescript
+  vard().patterns([
+    { regex: /attack/i, severity: 0.9, type: 'instructionOverride' }
+  ]);
+  ```
+</ResponseField>
+
+<ResponseField name="threatActions" type="Record<ThreatType, ThreatAction>" required>
+  Actions for each threat type.
+  
+  Maps threat types to actions: `"block"`, `"sanitize"`, `"warn"`, or `"allow"`.
+  
+  ```typescript
+  {
+    instructionOverride: 'block',
+    roleManipulation: 'block',
+    delimiterInjection: 'sanitize',
+    systemPromptLeak: 'block',
+    encoding: 'sanitize'
+  }
+  ```
+  
+  Use builder methods to configure:
+  ```typescript
+  vard()
+    .block('instructionOverride')
+    .sanitize('delimiterInjection');
+  ```
+</ResponseField>
+
+<ResponseField name="onWarn" type="(threat: Threat) => void" optional>
+  Optional callback function called when warning-level threats are detected.
+  
+  Only triggered when a threat's action is set to `"warn"`.
+  
+  ```typescript
+  vard()
+    .warn('encoding')
+    .onWarn((threat) => {
+      console.log('[SECURITY]', threat.type, threat.severity);
+      logToSIEM(threat);
+    });
+  ```
+</ResponseField>
+
+## Complete Interface
+
+```typescript
+import type { ThreatType, ThreatAction, Pattern, Threat } from '@andersmyrmel/vard';
+
+interface VardConfig {
+  /** Detection threshold (0-1) - only threats with severity >= threshold are processed */
+  threshold: number;
+  
+  /** Maximum input length in characters */
+  maxLength: number;
+  
+  /** Custom prompt delimiters to protect against (case-sensitive, exact match) */
+  customDelimiters: string[];
+  
+  /** Custom patterns to add to built-in patterns */
+  customPatterns: Pattern[];
+  
+  /** Actions for each threat type (block, sanitize, warn, allow) */
+  threatActions: Record<ThreatType, ThreatAction>;
+  
+  /** Optional callback for warning-level threats (called when action is 'warn') */
+  onWarn?: (threat: Threat) => void;
+}
+```
+
+## Usage
+
+<Note>
+**You typically don't use `VardConfig` directly.** Use the chainable builder methods instead:
+
+```typescript
+// ✅ Recommended: Use builder methods
+const myVard = vard()
+  .threshold(0.8)
+  .maxLength(5000)
+  .delimiters(['SYSTEM:', 'USER:'])
+  .block('instructionOverride')
+  .sanitize('delimiterInjection');
+
+// ❌ Not recommended: Direct config manipulation
+// (VardBuilder constructor is internal)
+```
+</Note>
+
+## Preset Configurations
+
+Presets use different `VardConfig` values:
+
+<CodeGroup>
+```typescript Strict Preset
+// vard.strict()
+{
+  threshold: 0.5,
+  maxLength: 10000,
+  customDelimiters: [],
+  customPatterns: [],
+  threatActions: {
+    instructionOverride: 'block',
+    roleManipulation: 'block',
+    delimiterInjection: 'block',
+    systemPromptLeak: 'block',
+    encoding: 'block',
+  },
+  onWarn: undefined,
+}
+```
+
+```typescript Moderate Preset (Default)
+// vard.moderate() or vard()
+{
+  threshold: 0.7,
+  maxLength: 10000,
+  customDelimiters: [],
+  customPatterns: [],
+  threatActions: {
+    instructionOverride: 'block',
+    roleManipulation: 'block',
+    delimiterInjection: 'sanitize',
+    systemPromptLeak: 'block',
+    encoding: 'sanitize',
+  },
+  onWarn: undefined,
+}
+```
+
+```typescript Lenient Preset
+// vard.lenient()
+{
+  threshold: 0.85,
+  maxLength: 10000,
+  customDelimiters: [],
+  customPatterns: [],
+  threatActions: {
+    instructionOverride: 'block',
+    roleManipulation: 'sanitize',
+    delimiterInjection: 'sanitize',
+    systemPromptLeak: 'warn',
+    encoding: 'sanitize',
+  },
+  onWarn: undefined,
+}
+```
+</CodeGroup>
+
+## Debugging Configuration
+
+While `VardConfig` is internal, you can inspect configuration via builder methods:
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+const myVard = vard()
+  .threshold(0.8)
+  .maxLength(5000)
+  .delimiters(['SYSTEM:'])
+  .block('instructionOverride');
+
+// Test configuration by checking behavior
+const result = myVard.safeParse('test input');
+```
+
+<Tip>
+If you need to inspect internal configuration for debugging:
+
+```typescript
+// VardBuilder has a private config property
+// Access via TypeScript type assertion (unsafe, for debugging only)
+const builder = vard().threshold(0.8);
+console.log((builder as any).config);
+```
+
+This is **not recommended** for production code. Use builder methods instead.
+</Tip>
+
+## Builder Pattern
+
+The builder pattern hides `VardConfig` complexity:
+
+```typescript
+// Instead of:
+const config: VardConfig = {
+  threshold: 0.8,
+  maxLength: 5000,
+  customDelimiters: ['SYSTEM:'],
+  customPatterns: [],
+  threatActions: {
+    instructionOverride: 'block',
+    roleManipulation: 'block',
+    delimiterInjection: 'sanitize',
+    systemPromptLeak: 'block',
+    encoding: 'sanitize',
+  },
+  onWarn: undefined,
+};
+
+// Use this:
+const myVard = vard()
+  .threshold(0.8)
+  .maxLength(5000)
+  .delimiters(['SYSTEM:'])
+  .block('instructionOverride')
+  .block('roleManipulation')
+  .sanitize('delimiterInjection')
+  .block('systemPromptLeak')
+  .sanitize('encoding');
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="VardBuilder API" icon="hammer" href="/api/methods">
+    All configuration methods
+  </Card>
+  <Card title="Presets" icon="sliders" href="/api/factory#presets">
+    Pre-configured security levels
+  </Card>
+  <Card title="Pattern" icon="code" href="/api/types/pattern">
+    Custom pattern configuration
+  </Card>
+</CardGroup>

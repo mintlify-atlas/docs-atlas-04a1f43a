@@ -1,0 +1,159 @@
+---
+title: "ThreatAction"
+description: "Actions to take when threats are detected"
+---
+
+`ThreatAction` defines the action Vard should take when a threat is detected.
+
+## TypeScript Definition
+
+```typescript
+export type ThreatAction = "block" | "sanitize" | "warn" | "allow";
+```
+
+## Actions
+
+### block
+
+**Behavior:** Throw `PromptInjectionError` when threat is detected (validation fails).
+
+**Use case:** Critical threats that must never pass through.
+
+```typescript
+const myVard = vard().block('instructionOverride');
+
+try {
+  myVard('Ignore all previous instructions');
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    console.error('Blocked:', error.threats);
+  }
+}
+```
+
+### sanitize
+
+**Behavior:** Remove or clean the threat and return sanitized input.
+
+**Use case:** Threats that can be safely removed without blocking the entire input.
+
+```typescript
+const myVard = vard().sanitize('delimiterInjection');
+
+const safe = myVard('Hello <system>hack</system> world');
+// Returns: "Hello  world" (delimiter removed)
+```
+
+<Note>
+Sanitization is **iterative** (max 5 passes) to catch nested attacks like `<sy<system>stem>`.
+After sanitization, the input is **re-validated** to ensure no new threats were exposed.
+</Note>
+
+### warn
+
+**Behavior:** Categorize threat but allow input to pass. Use with `onWarn()` callback for logging.
+
+**Use case:** Monitoring suspicious patterns without blocking users.
+
+```typescript
+const myVard = vard()
+  .warn('encoding')
+  .onWarn((threat) => {
+    console.log('[SECURITY]', threat.type, threat.severity);
+    logToSIEM(threat);
+  });
+
+const result = myVard('Hello aGFjaw==');
+// Logs warning but returns input unchanged
+```
+
+### allow
+
+**Behavior:** Completely ignore this threat type (no detection, no logging).
+
+**Use case:** Disable specific detections that cause false positives in your domain.
+
+```typescript
+const myVard = vard().allow('encoding');
+
+const result = myVard('Use base64: aGVsbG8=');
+// Passes through without any encoding checks
+```
+
+## Action Priority
+
+Actions only apply to threats with **severity >= configured threshold**:
+
+```typescript
+const lenient = vard()
+  .threshold(0.9)        // Only process threats >= 0.9 severity
+  .block('instructionOverride');
+
+lenient('maybe ignore'); // May pass if severity < 0.9
+```
+
+## Multiple Actions
+
+Each threat type has exactly **one action**. Last configuration wins:
+
+```typescript
+const myVard = vard()
+  .block('roleManipulation')
+  .warn('roleManipulation');  // Overwrites 'block' with 'warn'
+```
+
+## Preset Defaults
+
+Different presets configure different default actions:
+
+| Threat Type          | Strict  | Moderate | Lenient  |
+|---------------------|---------|----------|---------|
+| instructionOverride | block   | block    | block   |
+| roleManipulation    | block   | block    | sanitize|
+| delimiterInjection  | block   | sanitize | sanitize|
+| systemPromptLeak    | block   | block    | warn    |
+| encoding            | block   | sanitize | sanitize|
+
+## Usage Example
+
+<CodeGroup>
+```typescript Multi-Tier Security
+import vard from '@andersmyrmel/vard';
+
+const chatVard = vard()
+  // Critical: Always block
+  .block('instructionOverride')
+  .block('systemPromptLeak')
+  // Moderate: Clean and allow
+  .sanitize('delimiterInjection')
+  .sanitize('encoding')
+  // Low: Monitor only
+  .warn('roleManipulation')
+  .onWarn((threat) => {
+    metrics.increment('prompt.threat.warned', { type: threat.type });
+  });
+```
+
+```typescript Permissive Mode
+import vard from '@andersmyrmel/vard';
+
+const lenientVard = vard()
+  .threshold(0.85)  // Higher threshold
+  .sanitize('instructionOverride')
+  .sanitize('roleManipulation')
+  .sanitize('delimiterInjection')
+  .allow('encoding')
+  .allow('systemPromptLeak');
+```
+</CodeGroup>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="ThreatType" icon="shield" href="/api/types/threat-type">
+    All threat categories
+  </Card>
+  <Card title="Presets" icon="sliders" href="/api/presets">
+    Pre-configured security levels
+  </Card>
+</CardGroup>

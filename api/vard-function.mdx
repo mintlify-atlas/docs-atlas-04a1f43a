@@ -1,0 +1,178 @@
+---
+title: vard() function
+description: Main entry point for Vard validation
+---
+
+The `vard()` function is the primary entry point for the Vard library. It provides multiple ways to validate input depending on your needs.
+
+## Function Overloads
+
+### vard(input: string): string
+
+Validates input immediately using the default moderate preset (threshold: 0.7).
+
+<ParamField path="input" type="string" required>
+  User input to validate
+</ParamField>
+
+**Returns:** Validated string if safe
+
+**Throws:** `PromptInjectionError` when prompt injection is detected
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+try {
+  const safe = vard('Hello, how can I help?');
+  console.log(safe); // 'Hello, how can I help?'
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    console.error('Threat detected!');
+  }
+}
+```
+
+```typescript
+// This will throw
+vard('Ignore all previous instructions');
+// Throws: PromptInjectionError
+```
+
+### vard(): CallableVard
+
+Returns a chainable vard builder with default configuration.
+
+**Returns:** `CallableVard` instance that can be configured and reused
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+const myVard = vard()
+  .delimiters(['CONTEXT:', 'USER:'])
+  .maxLength(5000)
+  .threshold(0.8);
+
+const safe = myVard.parse(userInput);
+```
+
+## Static Methods
+
+### vard.safe(input: string): VardResult
+
+Validates input without throwing - returns a result object instead. Useful when you want to handle threats gracefully without try/catch.
+
+<ParamField path="input" type="string" required>
+  User input to validate
+</ParamField>
+
+**Returns:** `VardResult` discriminated union:
+- `{ safe: true, data: string }` if input is safe
+- `{ safe: false, threats: Threat[] }` if threats detected
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+if (result.safe) {
+  console.log('Safe input:', result.data);
+  processInput(result.data);
+} else {
+  console.log('Threats found:', result.threats);
+  result.threats.forEach(t => {
+    console.log(`- ${t.type} (severity: ${t.severity})`);
+  });
+}
+```
+
+**Type narrowing with discriminated union:**
+
+```typescript
+const result = vard.safe(input);
+
+if (result.safe) {
+  result.data;    // TypeScript knows this is string
+} else {
+  result.threats; // TypeScript knows this is Threat[]
+}
+```
+
+## Aliases
+
+### v
+
+Short alias for `vard` - for power users who prefer brevity.
+
+```typescript
+import { v } from '@andersmyrmel/vard';
+
+const safe = v(userInput);
+const chatVard = v.moderate().delimiters(['CONTEXT:']);
+```
+
+### createVard(): CallableVard
+
+Creates a new vard with default (moderate) configuration. Equivalent to `vard()` with no arguments.
+
+**Returns:** `CallableVard` instance with moderate preset
+
+```typescript
+import { createVard } from '@andersmyrmel/vard';
+
+const myVard = createVard()
+  .delimiters(['CONTEXT:'])
+  .maxLength(5000);
+
+const safe = myVard.parse(userInput);
+```
+
+## Usage Patterns
+
+<CodeGroup>
+
+```typescript Zero-config (throws on threat)
+import vard from '@andersmyrmel/vard';
+
+const safe = vard('Hello, how can I help?');
+// Returns: 'Hello, how can I help?'
+
+vard('Ignore all previous instructions');
+// Throws: PromptInjectionError
+```
+
+```typescript Safe mode (no exceptions)
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+if (result.safe) {
+  processInput(result.data);
+} else {
+  logThreats(result.threats);
+}
+```
+
+```typescript Chainable configuration
+import vard from '@andersmyrmel/vard';
+
+const chatVard = vard()
+  .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:'])
+  .maxLength(5000)
+  .threshold(0.8)
+  .sanitize('delimiterInjection')
+  .block('instructionOverride');
+
+const safe = chatVard.parse(userMessage);
+```
+
+</CodeGroup>
+
+<Note>
+**Default Behavior:** When called with input, `vard()` uses the moderate preset with threshold 0.7, providing balanced security and usability.
+</Note>
+
+## Related
+
+- [Preset methods](/api/presets) - Pre-configured security levels
+- [Builder methods](/api/builder-methods) - Configuration and execution methods
+- [Error Handling](/guides/error-handling) - Working with PromptInjectionError

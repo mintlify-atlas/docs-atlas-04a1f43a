@@ -1,0 +1,177 @@
+---
+title: "Threat"
+description: "Individual threat detection result"
+---
+
+`Threat` represents a single detected threat with metadata about what was found, where it was found, and how severe it is.
+
+## TypeScript Definition
+
+```typescript
+export interface Threat {
+  type: ThreatType;
+  severity: number;
+  match: string;
+  position: number;
+}
+```
+
+## Fields
+
+<ResponseField name="type" type="ThreatType" required>
+  Type of threat detected (e.g., `'instructionOverride'`, `'roleManipulation'`).
+  
+  See [ThreatType](/api/types/threat-type) for all possible values.
+</ResponseField>
+
+<ResponseField name="severity" type="number" required>
+  Severity score from 0 (low) to 1 (high).
+  
+  **Examples:**
+  - `0.95`: Critical threat (e.g., "ignore all instructions")
+  - `0.75`: Moderate threat (e.g., "you are now...")
+  - `0.55`: Low severity (e.g., partial pattern match)
+  
+  Only threats with `severity >= threshold` are processed.
+</ResponseField>
+
+<ResponseField name="match" type="string" required>
+  The matched string that triggered detection.
+  
+  **Truncated** if longer than 100 characters to prevent log flooding.
+  
+  ```typescript
+  threat.match; // "ignore all previous instructions"
+  ```
+</ResponseField>
+
+<ResponseField name="position" type="number" required>
+  Character position where the threat was found in the input (0-based index).
+  
+  ```typescript
+  const input = "Hello. Ignore all instructions.";
+  threat.position; // 7 (start of "Ignore")
+  ```
+</ResponseField>
+
+## Example Threat Object
+
+```json
+{
+  "type": "instructionOverride",
+  "severity": 0.95,
+  "match": "ignore all previous instructions",
+  "position": 42
+}
+```
+
+## Usage Examples
+
+<CodeGroup>
+```typescript Inspect Detected Threats
+import vard, { PromptInjectionError } from '@andersmyrmel/vard';
+import type { Threat } from '@andersmyrmel/vard';
+
+try {
+  vard(userInput);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    error.threats.forEach((threat: Threat) => {
+      console.log(`Type: ${threat.type}`);
+      console.log(`Severity: ${threat.severity.toFixed(2)}`);
+      console.log(`Match: "${threat.match}"`);
+      console.log(`Position: ${threat.position}`);
+    });
+  }
+}
+```
+
+```typescript Filter by Severity
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+if (!result.safe) {
+  const critical = result.threats.filter(t => t.severity >= 0.9);
+  const moderate = result.threats.filter(t => t.severity >= 0.7 && t.severity < 0.9);
+  const low = result.threats.filter(t => t.severity < 0.7);
+
+  console.log(`Critical: ${critical.length}`);
+  console.log(`Moderate: ${moderate.length}`);
+  console.log(`Low: ${low.length}`);
+}
+```
+
+```typescript Group by Type
+import vard from '@andersmyrmel/vard';
+import type { ThreatType } from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+if (!result.safe) {
+  const byType = result.threats.reduce((acc, threat) => {
+    if (!acc[threat.type]) acc[threat.type] = [];
+    acc[threat.type].push(threat);
+    return acc;
+  }, {} as Record<ThreatType, Threat[]>);
+
+  console.log('instructionOverride:', byType.instructionOverride?.length || 0);
+  console.log('roleManipulation:', byType.roleManipulation?.length || 0);
+}
+```
+
+```typescript Log to Security System
+import vard from '@andersmyrmel/vard';
+import type { Threat } from '@andersmyrmel/vard';
+
+const myVard = vard()
+  .warn('encoding')
+  .onWarn((threat: Threat) => {
+    // Send to SIEM/logging platform
+    logToDatadog({
+      service: 'chat-api',
+      level: 'warning',
+      threat_type: threat.type,
+      severity: threat.severity,
+      match: threat.match,
+      position: threat.position,
+    });
+  });
+```
+</CodeGroup>
+
+## Privacy Considerations
+
+<Warning>
+**Do not expose threat details to end users.** The `match` field may contain sensitive or malicious content.
+
+Use `error.getUserMessage()` for user-facing errors:
+
+```typescript
+try {
+  vard(userInput);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    // ✅ Safe for users
+    res.status(400).json({ error: error.getUserMessage() });
+    
+    // ❌ DO NOT send to users
+    // res.status(400).json({ threats: error.threats });
+    
+    // ✅ Log server-side only
+    console.error('[SECURITY]', error.getDebugInfo());
+  }
+}
+```
+</Warning>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="VardResult" icon="code-branch" href="/api/types/vard-result">
+    Result type containing threats array
+  </Card>
+  <Card title="PromptInjectionError" icon="triangle-exclamation" href="/api/errors/prompt-injection-error">
+    Error class with threats property
+  </Card>
+</CardGroup>

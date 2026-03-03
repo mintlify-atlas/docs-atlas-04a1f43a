@@ -1,0 +1,205 @@
+---
+title: "Pattern"
+description: "Custom pattern configuration for threat detection"
+---
+
+`Pattern` defines a regex pattern to match, its severity score, and which threat type it represents. Use patterns to add domain-specific or language-specific threat detection.
+
+## TypeScript Definition
+
+```typescript
+export interface Pattern {
+  regex: RegExp;
+  severity: number;
+  type: ThreatType;
+}
+```
+
+## Fields
+
+<ResponseField name="regex" type="RegExp" required>
+  Regular expression to match against user input.
+  
+  **Must use bounded quantifiers** (`{n,m}`, `*?`, `+?`) to prevent ReDoS attacks.
+  
+  ```typescript
+  // ✅ SAFE
+  /ignore\s+(?:all\s+)?instructions/i
+  /you\s+are\s+now.{1,50}/i
+  
+  // ❌ UNSAFE (catastrophic backtracking)
+  /(a+)+/
+  /(.*)+ instructions/
+  ```
+</ResponseField>
+
+<ResponseField name="severity" type="number" required>
+  Severity score from 0 (low) to 1 (high).
+  
+  **Guidelines:**
+  - `0.9-1.0`: Critical (always block)
+  - `0.7-0.9`: High (block or sanitize)
+  - `0.5-0.7`: Moderate (sanitize or warn)
+  - `0.0-0.5`: Low (warn or allow)
+  
+  Only patterns with `severity >= threshold` trigger actions.
+</ResponseField>
+
+<ResponseField name="type" type="ThreatType" required>
+  Which threat category this pattern detects.
+  
+  See [ThreatType](/api/types/threat-type) for all possible values.
+</ResponseField>
+
+## ReDoS Warning
+
+<Warning>
+**Regular Expression Denial of Service (ReDoS)**
+
+Malicious input can cause catastrophic backtracking with unsafe regex patterns:
+
+```typescript
+// ❌ UNSAFE: Exponential backtracking
+const unsafe = /(a+)+b/;
+unsafe.test('a'.repeat(50) + '!'); // Hangs for seconds/minutes
+
+// ✅ SAFE: Bounded quantifiers
+const safe = /a{1,50}b/;
+safe.test('a'.repeat(50) + '!'); // Returns instantly
+```
+
+**Best practices:**
+- Use `{n,m}` instead of `*` or `+`
+- Avoid nested quantifiers: `(a+)+`, `(.*)+`
+- Test patterns with long malicious input
+</Warning>
+
+## Usage Examples
+
+<CodeGroup>
+```typescript Norwegian Patterns
+import vard from '@andersmyrmel/vard';
+import type { Pattern } from '@andersmyrmel/vard';
+
+const norwegianPatterns: Pattern[] = [
+  {
+    regex: /ignorer.*instruksjoner/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /du er nå/i,
+    severity: 0.85,
+    type: 'roleManipulation',
+  },
+  {
+    regex: /vis.*systemprompt/i,
+    severity: 0.9,
+    type: 'systemPromptLeak',
+  },
+];
+
+const norwegianVard = vard()
+  .patterns(norwegianPatterns)
+  .block('instructionOverride')
+  .block('roleManipulation')
+  .block('systemPromptLeak');
+
+norwegianVard('ignorer alle instruksjoner'); // Throws
+```
+
+```typescript Domain-Specific Patterns
+import vard from '@andersmyrmel/vard';
+import type { Pattern } from '@andersmyrmel/vard';
+
+const medicalPatterns: Pattern[] = [
+  {
+    regex: /reveal\s+(?:patient|medical)\s+(?:data|records)/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+  {
+    regex: /ignore\s+HIPAA/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+];
+
+const medicalVard = vard()
+  .patterns(medicalPatterns)
+  .block('systemPromptLeak')
+  .block('instructionOverride');
+```
+
+```typescript Single Pattern
+import vard from '@andersmyrmel/vard';
+
+const myVard = vard()
+  .pattern(
+    /custom\s+attack\s+pattern/i,  // regex
+    0.85,                            // severity
+    'instructionOverride'            // type
+  )
+  .block('instructionOverride');
+
+myVard('custom attack pattern'); // Throws
+```
+
+```typescript Language Pack
+import vard from '@andersmyrmel/vard';
+import type { Pattern } from '@andersmyrmel/vard';
+
+const spanishPatterns: Pattern[] = [
+  { regex: /ignora.*instrucciones/i, severity: 0.9, type: 'instructionOverride' },
+  { regex: /eres ahora/i, severity: 0.85, type: 'roleManipulation' },
+  { regex: /revela.*prompt/i, severity: 0.9, type: 'systemPromptLeak' },
+];
+
+const frenchPatterns: Pattern[] = [
+  { regex: /ignore.*instructions/i, severity: 0.9, type: 'instructionOverride' },
+  { regex: /tu es maintenant/i, severity: 0.85, type: 'roleManipulation' },
+  { regex: /révèle.*prompt/i, severity: 0.9, type: 'systemPromptLeak' },
+];
+
+const multilingualVard = vard()
+  .patterns([...spanishPatterns, ...frenchPatterns])
+  .block('instructionOverride')
+  .block('roleManipulation')
+  .block('systemPromptLeak');
+```
+</CodeGroup>
+
+## Testing Custom Patterns
+
+<Tip>
+Always test custom patterns with:
+
+1. **Valid attacks** (should detect)
+2. **False positives** (should not detect)
+3. **ReDoS safety** (should complete quickly)
+
+```typescript
+// Test detection
+const myVard = vard()
+  .pattern(/attack/i, 0.9, 'instructionOverride')
+  .block('instructionOverride');
+
+expect(() => myVard('attack')).toThrow();
+expect(() => myVard('safe input')).not.toThrow();
+
+// Test ReDoS safety
+const malicious = 'a'.repeat(10000) + '!';
+expect(() => myVard(malicious)).not.toThrow();
+```
+</Tip>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="Custom Patterns Guide" icon="paintbrush" href="/guides/custom-patterns">
+    Learn how to create effective custom patterns
+  </Card>
+  <Card title="ThreatType" icon="shield" href="/api/types/threat-type">
+    All threat categories
+  </Card>
+</CardGroup>

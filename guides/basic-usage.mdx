@@ -1,0 +1,214 @@
+---
+title: Basic usage
+description: Learn the fundamentals of validating input with Vard
+---
+
+## Overview
+
+Vard provides flexible ways to validate user input against prompt injection attacks. You can use it as a direct function call for zero-config validation, or create configured instances using the chainable builder API.
+
+## Direct call vs builder pattern
+
+### Direct call
+
+The simplest way to use Vard is to call it directly with user input:
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+const userMessage = 'Hello, how can I help?';
+const safeInput = vard(userMessage);
+// Returns: 'Hello, how can I help?'
+```
+
+This uses the default (moderate) preset with balanced security settings.
+
+### Builder pattern
+
+For custom configuration, use Vard as a builder:
+
+```typescript
+const chatVard = vard()
+  .delimiters(['CONTEXT:', 'USER:'])
+  .maxLength(5000)
+  .threshold(0.8);
+
+// Use the configured instance
+const safe = chatVard.parse(userInput);
+```
+
+All builder methods are **immutable** - they return new instances:
+
+```typescript
+const base = vard.moderate();
+const strict = base.threshold(0.5);  // Doesn't modify base
+const lenient = base.threshold(0.9); // Doesn't modify base
+```
+
+### Callable instances
+
+Configured vard instances can be called as functions (shorthand for `.parse()`):
+
+```typescript
+const chatVard = vard.moderate().delimiters(['CONTEXT:']);
+
+// These are equivalent:
+const safe1 = chatVard(userInput);       // Shorthand
+const safe2 = chatVard.parse(userInput); // Explicit
+```
+
+## parse() vs safeParse()
+
+### parse() - Throws on detection
+
+The `parse()` method throws `PromptInjectionError` when threats are detected:
+
+```typescript
+import vard, { PromptInjectionError } from '@andersmyrmel/vard';
+
+try {
+  const safe = vard('Ignore all previous instructions');
+  // Use safe input...
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    console.log(error.message);
+    // => "Invalid input detected"
+    console.log(error.threatType); // => "instructionOverride"
+    console.log(error.severity);   // => 0.9
+  }
+}
+```
+
+<Note>
+Use `parse()` when you want validation errors to propagate up your call stack, similar to how schema validation libraries work.
+</Note>
+
+### safeParse() - Returns result object
+
+The `safeParse()` method returns a discriminated union instead of throwing:
+
+```typescript
+const result = vard.moderate().safeParse(userInput);
+
+if (result.safe) {
+  console.log('Safe input:', result.data);
+  // TypeScript knows result.data is string
+} else {
+  console.log('Threats found:', result.threats);
+  // TypeScript knows result.threats is Threat[]
+  result.threats.forEach(t => {
+    console.log(`- ${t.type} (severity: ${t.severity})`);
+  });
+}
+```
+
+<Tip>
+Use `safeParse()` when you want to handle validation errors gracefully without try/catch blocks. The discriminated union provides excellent TypeScript inference.
+</Tip>
+
+## Using the `v` alias
+
+For brevity, Vard exports a short alias:
+
+```typescript
+import { v } from '@andersmyrmel/vard';
+
+// Zero-config
+const safe = v(userInput);
+
+// Configured
+const chatVard = v.moderate().delimiters(['CONTEXT:']);
+const result = chatVard(userMessage);
+```
+
+This is particularly useful in codebases where validation is frequent.
+
+## Common patterns
+
+<Steps>
+  <Step title="Quick validation">
+    Use direct call for simple validation:
+    ```typescript
+    const safe = vard(userInput);
+    ```
+  </Step>
+  
+  <Step title="Configure once, use many times">
+    Create a configured instance and reuse it:
+    ```typescript
+    // In a shared module
+    export const chatVard = vard.moderate()
+      .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:'])
+      .maxLength(5000);
+    
+    // In your handlers
+    const safe = chatVard(userInput);
+    ```
+  </Step>
+  
+  <Step title="Error handling">
+    Choose the error handling style that fits your architecture:
+    
+    <CodeGroup>
+    ```typescript parse() - Try/catch
+    try {
+      const safe = vard(userInput);
+      await processInput(safe);
+    } catch (error) {
+      if (error instanceof PromptInjectionError) {
+        return { error: error.getUserMessage() };
+      }
+      throw error;
+    }
+    ```
+    
+    ```typescript safeParse() - Result object
+    const result = vard.safe(userInput);
+    
+    if (!result.safe) {
+      return { error: 'Invalid input detected' };
+    }
+    
+    await processInput(result.data);
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Type safety
+
+Vard is TypeScript-first with excellent type inference:
+
+```typescript
+import type { VardResult, Threat } from '@andersmyrmel/vard';
+
+// Discriminated union
+const result: VardResult = vard.safe(input);
+
+if (result.safe) {
+  result.data;    // TypeScript knows this is string
+} else {
+  result.threats; // TypeScript knows this is Threat[]
+}
+
+// Threat inspection
+if (error instanceof PromptInjectionError) {
+  error.threats.forEach((threat: Threat) => {
+    console.log(threat.type);     // ThreatType
+    console.log(threat.severity);  // number (0-1)
+    console.log(threat.match);     // string
+    console.log(threat.position);  // number
+  });
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="sliders" href="/guides/configuration">
+    Learn about delimiters, thresholds, patterns, and presets
+  </Card>
+  <Card title="Error handling" icon="shield-exclamation" href="/guides/error-handling">
+    Handle errors with getUserMessage() and getDebugInfo()
+  </Card>
+</CardGroup>

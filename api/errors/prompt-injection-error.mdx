@@ -1,0 +1,186 @@
+---
+title: "PromptInjectionError"
+description: "Error thrown when prompt injection is detected"
+---
+
+# PromptInjectionError
+
+Error thrown when prompt injection attacks are detected in user input.
+
+This error contains details about detected threats in the `threats` property. Use `getUserMessage()` for user-facing errors (safe, no threat details leaked) and `getDebugInfo()` for server-side logging (detailed threat information).
+
+<Warning>
+**Security Note**: Never expose `getDebugInfo()` or the `threats` array to end users, as this reveals information about your security measures.
+</Warning>
+
+## Class Signature
+
+```typescript
+class PromptInjectionError extends Error {
+  public readonly threats: Threat[];
+  public readonly name: "PromptInjectionError";
+  public readonly message: string;
+
+  constructor(threats: Threat[]);
+  getUserMessage(locale?: "en" | "no"): string;
+  getDebugInfo(): string;
+}
+```
+
+## Properties
+
+<ResponseField name="threats" type="Threat[]" required>
+  Array of detected threats. Each threat contains:
+  - `type`: Type of attack detected
+  - `severity`: Severity score (0-1)
+  - `match`: The matched string that triggered detection
+  - `position`: Character position where threat was found
+
+  <Warning>
+    **Security**: Never expose this to end users. Use `getUserMessage()` instead.
+  </Warning>
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Error name, always `"PromptInjectionError"`
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Generic error message: `"Invalid input detected"`
+</ResponseField>
+
+## Methods
+
+### getUserMessage()
+
+Returns a generic, user-safe error message.
+
+This message intentionally does **NOT** reveal what was detected or why. Use this for user-facing error messages.
+
+<ParamField path="locale" type="'en' | 'no'" default="'en'">
+  Language for the message. Supports:
+  - `'en'`: English (default)
+  - `'no'`: Norwegian
+</ParamField>
+
+**Returns**: `string` - Generic error message in the specified language
+
+**English message (default)**:
+```typescript
+error.getUserMessage('en');
+// Returns: "Invalid input detected. Please try again."
+```
+
+**Norwegian message**:
+```typescript
+error.getUserMessage('no');
+// Returns: "Ugyldig innhold oppdaget. Vennligst prøv igjen."
+```
+
+### getDebugInfo()
+
+Returns detailed threat information for logging and debugging.
+
+<Warning>
+**Security Warning**: This method returns detailed information about detected threats including attack types, severity scores, and matched patterns. **NEVER expose this to end users** as it reveals your security measures.
+
+Use this only for:
+- Server-side logging
+- Security monitoring
+- Debugging during development
+</Warning>
+
+**Returns**: `string` - Formatted string with detailed threat information
+
+**Example output**:
+```
+Threats detected:
+- instructionOverride (severity: 0.90, match: "ignore all previous instr...", position: 0)
+- delimiterInjection (severity: 0.95, match: "<system>", position: 45)
+```
+
+## Privacy and Security
+
+The `PromptInjectionError` class is designed with privacy in mind:
+
+- **`getUserMessage()`**: Generic, safe message suitable for displaying to end users. Does not reveal attack details.
+- **`getDebugInfo()`**: Detailed threat information for server-side logging only. **Never send to client**.
+
+<Note>
+This dual-message approach prevents leaking information about your security measures to potential attackers while still providing detailed logs for security teams.
+</Note>
+
+## Examples
+
+### Basic Error Handling
+
+```typescript
+import vard, { PromptInjectionError } from '@andersmyrmel/vard';
+
+try {
+  const safe = vard(userInput);
+  processInput(safe);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    // Show generic message to user
+    console.log(error.getUserMessage('en'));
+
+    // Log details server-side
+    console.error('[SECURITY]', error.getDebugInfo());
+  }
+}
+```
+
+### Inspecting Detected Threats
+
+```typescript
+try {
+  vard(userInput);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    error.threats.forEach(threat => {
+      console.log(`Type: ${threat.type}`);
+      console.log(`Severity: ${threat.severity}`);
+      console.log(`Match: ${threat.match}`);
+      console.log(`Position: ${threat.position}`);
+    });
+  }
+}
+```
+
+### Norwegian Error Messages
+
+```typescript
+try {
+  vard(userInput);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    return {
+      error: error.getUserMessage('no')
+      // Returns: "Ugyldig innhold oppdaget. Vennligst prøv igjen."
+    };
+  }
+}
+```
+
+### Server-Side Logging
+
+```typescript
+try {
+  vard(userInput);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    // Log detailed info server-side (safe)
+    console.error('[SECURITY]', error.getDebugInfo());
+
+    // Return generic message to user (safe)
+    return { error: error.getUserMessage() };
+  }
+}
+```
+
+## Related
+
+- [Threat Types](/api/types/threat-type) - Understanding different attack types
+- [VardResult](/api/types/vard-result) - Safe parsing without exceptions
+- [safeParse()](/api/builder-methods) - Non-throwing validation method

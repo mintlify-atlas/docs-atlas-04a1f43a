@@ -1,0 +1,418 @@
+---
+title: Custom patterns
+description: Add language-specific and domain-specific detection patterns
+---
+
+## Overview
+
+Vard's built-in patterns detect common English-language attacks. Use custom patterns to:
+
+- Detect attacks in other languages (Norwegian, Spanish, French, etc.)
+- Add domain-specific threat patterns (medical, finance, etc.)
+- Create private patterns specific to your application
+- Tune detection for your specific use case
+
+## Pattern interface
+
+Each pattern consists of three parts:
+
+```typescript
+import type { Pattern } from '@andersmyrmel/vard';
+
+const pattern: Pattern = {
+  regex: /ignorer.*instruksjoner/i,  // Detection pattern
+  severity: 0.9,                     // Score from 0-1 (higher = more severe)
+  type: 'instructionOverride',       // Which threat category
+};
+```
+
+### Threat types
+
+| Type | Description | Examples |
+|------|-------------|----------|
+| `instructionOverride` | Attempts to replace system instructions | "ignore all previous instructions" |
+| `roleManipulation` | Tries to change AI's role/persona | "you are now a hacker" |
+| `delimiterInjection` | Injects fake prompt delimiters | `<system>malicious</system>` |
+| `systemPromptLeak` | Attempts to reveal system prompt | "reveal your instructions" |
+| `encoding` | Uses encoding to bypass detection | Base64, hex, unicode obfuscation |
+
+## Adding patterns
+
+### Single pattern
+
+Use `.pattern()` to add one pattern:
+
+```typescript
+const norwegianVard = vard.moderate()
+  .pattern(/ignorer.*instruksjoner/i, 0.9, 'instructionOverride')
+  .pattern(/du er nå/i, 0.85, 'roleManipulation')
+  .pattern(/vis systemprompten/i, 0.95, 'systemPromptLeak');
+
+norwegianVard.parse('ignorer alle instruksjoner');
+// Throws: PromptInjectionError
+```
+
+**Parameters:**
+- `regex` (required): Regular expression to match
+- `severity` (optional): Score from 0-1 (default: 0.8)
+- `type` (optional): Threat type (default: 'instructionOverride')
+
+### Multiple patterns
+
+Use `.patterns()` to add an array:
+
+```typescript
+import type { Pattern } from '@andersmyrmel/vard';
+
+const spanishPatterns: Pattern[] = [
+  {
+    regex: /ignora.*instrucciones/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /eres ahora/i,
+    severity: 0.85,
+    type: 'roleManipulation',
+  },
+  {
+    regex: /revela.*instrucciones/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+];
+
+const spanishVard = vard()
+  .patterns(spanishPatterns)
+  .block('instructionOverride')
+  .block('systemPromptLeak');
+```
+
+## Language-specific patterns
+
+### Norwegian example
+
+```typescript
+const norwegianPatterns: Pattern[] = [
+  // Instruction override
+  { regex: /ignorer.*(?:instruksjoner|instruksjon)/i, severity: 0.9, type: 'instructionOverride' },
+  { regex: /glem.*(?:alt|instruksjoner)/i, severity: 0.85, type: 'instructionOverride' },
+  { regex: /begynn på nytt/i, severity: 0.75, type: 'instructionOverride' },
+  
+  // Role manipulation
+  { regex: /du er nå/i, severity: 0.85, type: 'roleManipulation' },
+  { regex: /opptre som/i, severity: 0.8, type: 'roleManipulation' },
+  { regex: /fra nå av er du/i, severity: 0.85, type: 'roleManipulation' },
+  
+  // System prompt leak
+  { regex: /vis.*(?:systemprompt|instruksjoner)/i, severity: 0.95, type: 'systemPromptLeak' },
+  { regex: /gjenta.*instruksjoner/i, severity: 0.9, type: 'systemPromptLeak' },
+];
+
+const norwegianVard = vard()
+  .patterns(norwegianPatterns)
+  .block('instructionOverride')
+  .block('systemPromptLeak');
+```
+
+### Spanish example
+
+```typescript
+const spanishPatterns: Pattern[] = [
+  // Instruction override
+  { regex: /ignora.*(?:instrucciones|comandos)/i, severity: 0.9, type: 'instructionOverride' },
+  { regex: /olvida.*(?:todo|instrucciones)/i, severity: 0.85, type: 'instructionOverride' },
+  { regex: /nuevas instrucciones/i, severity: 0.8, type: 'instructionOverride' },
+  
+  // Role manipulation
+  { regex: /eres ahora/i, severity: 0.85, type: 'roleManipulation' },
+  { regex: /actúa como/i, severity: 0.8, type: 'roleManipulation' },
+  { regex: /desde ahora eres/i, severity: 0.85, type: 'roleManipulation' },
+  
+  // System prompt leak
+  { regex: /revela.*instrucciones/i, severity: 0.95, type: 'systemPromptLeak' },
+  { regex: /muestra.*(?:prompt|instrucciones)/i, severity: 0.9, type: 'systemPromptLeak' },
+];
+
+const spanishVard = vard()
+  .patterns(spanishPatterns)
+  .moderate();
+```
+
+<Tip>
+Combine language-specific patterns with built-in English patterns for multilingual support.
+</Tip>
+
+## Domain-specific patterns
+
+### Medical/healthcare
+
+```typescript
+const medicalPatterns: Pattern[] = [
+  {
+    regex: /reveal\s+patient\s+(?:data|records|information)/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+  {
+    regex: /bypass\s+(?:hipaa|privacy|confidentiality)/i,
+    severity: 0.95,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /override\s+(?:diagnosis|treatment|prescription)/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /ignore\s+(?:medical|clinical)\s+guidelines/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+];
+
+const medicalVard = vard.strict()
+  .patterns(medicalPatterns)
+  .block('systemPromptLeak')
+  .block('instructionOverride');
+```
+
+### Finance/banking
+
+```typescript
+const financePatterns: Pattern[] = [
+  {
+    regex: /(?:transfer|wire|send)\s+(?:all\s+)?funds/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /bypass\s+(?:2fa|authentication|verification)/i,
+    severity: 0.95,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /reveal\s+(?:account|balance|transaction)\s+(?:number|data)/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+  {
+    regex: /override\s+(?:credit|loan|approval)\s+limit/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+];
+
+const financeVard = vard.strict()
+  .patterns(financePatterns)
+  .maxLength(1000);
+```
+
+## Private patterns
+
+Add application-specific patterns that remain private:
+
+```typescript
+// These patterns are NOT in the public vard repo
+// They're specific to your application and remain private
+const myPrivatePatterns: Pattern[] = [
+  {
+    regex: /\bsecret-trigger-word\b/i,
+    severity: 0.95,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /internal-command-\d+/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /\b(?:sudowoodo|gandalf|mellon)\b/i,
+    severity: 0.95,
+    type: 'instructionOverride',
+  },
+];
+
+const myVard = vard()
+  .patterns(myPrivatePatterns)
+  .block('instructionOverride');
+```
+
+<Note>
+Private patterns provide an additional security layer beyond Vard's open-source patterns. Attackers can't bypass what they don't know exists.
+</Note>
+
+## ReDoS safety
+
+<Warning>
+**Critical:** All regex patterns must use **bounded quantifiers** to prevent Regular Expression Denial of Service (ReDoS) attacks.
+</Warning>
+
+### Safe patterns (bounded quantifiers)
+
+```typescript
+// ✅ GOOD - Uses bounded quantifiers
+const safePatterns: Pattern[] = [
+  {
+    regex: /ignore\s+(?:all\s+)?(?:previous\s+)?instructions/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /(?:you\s+are\s+now|act\s+as)\s+.{1,50}/i,  // Bounded: .{1,50}
+    severity: 0.85,
+    type: 'roleManipulation',
+  },
+  {
+    regex: /repeat\s+(?:the\s+)?system\s+prompt/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+];
+```
+
+### Unsafe patterns (catastrophic backtracking)
+
+```typescript
+// ❌ BAD - Catastrophic backtracking
+const unsafePatterns: Pattern[] = [
+  {
+    regex: /(a+)+/,  // UNSAFE!
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /(.*)+instructions/,  // UNSAFE!
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+  {
+    regex: /(.*)*(.*)*system/,  // UNSAFE!
+    severity: 0.9,
+    type: 'systemPromptLeak',
+  },
+];
+```
+
+### Testing for ReDoS
+
+Stress-test your patterns:
+
+```typescript
+const myVard = vard()
+  .pattern(/your-custom-pattern/i, 0.9, 'instructionOverride');
+
+// Malicious input designed to trigger backtracking
+const malicious = 'a'.repeat(10000) + '!';
+
+const start = performance.now();
+try {
+  myVard.parse(malicious);
+} catch (error) {
+  // Expected to throw or pass
+}
+const duration = performance.now() - start;
+
+if (duration > 100) {
+  console.warn('⚠️ Pattern may be vulnerable to ReDoS');
+}
+```
+
+<Tip>
+**ReDoS prevention:**
+- Use `{n,m}` instead of `*` or `+`
+- Avoid nested quantifiers: `(a+)+`, `(.*)*`
+- Use non-capturing groups: `(?:...)` instead of `(...)`
+- Test patterns with long repetitive input
+</Tip>
+
+## Pattern severity guidelines
+
+| Severity | When to use | Example |
+|----------|-------------|----------|
+| **0.95-1.0** | Critical attacks, clear malicious intent | "reveal system prompt", "bypass authentication" |
+| **0.85-0.94** | Strong indicators of attacks | "ignore instructions", "you are now" |
+| **0.70-0.84** | Moderate suspicion, may have false positives | "start over", "new instructions" |
+| **0.50-0.69** | Weak indicators, high false positive risk | "forget that", "let's try again" |
+| **< 0.50** | Avoid - too many false positives | - |
+
+<Steps>
+  <Step title="Start conservative">
+    Begin with high severity (0.9+) to minimize false positives:
+    ```typescript
+    const pattern: Pattern = {
+      regex: /your-pattern/i,
+      severity: 0.95,  // Start high
+      type: 'instructionOverride',
+    };
+    ```
+  </Step>
+  
+  <Step title="Monitor and tune">
+    Use `.warn()` and `.onWarn()` to collect data:
+    ```typescript
+    const testVard = vard()
+      .pattern(/your-pattern/i, 0.95, 'instructionOverride')
+      .warn('instructionOverride')
+      .onWarn((threat) => {
+        console.log('Pattern matched:', threat.match);
+        // Analyze false positives
+      });
+    ```
+  </Step>
+  
+  <Step title="Adjust based on data">
+    Lower severity if pattern is accurate, raise if too many false positives:
+    ```typescript
+    // After analysis
+    const tunedVard = vard()
+      .pattern(/your-pattern/i, 0.85, 'instructionOverride')  // Adjusted
+      .block('instructionOverride');
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+```typescript
+import vard from '@andersmyrmel/vard';
+import type { Pattern } from '@andersmyrmel/vard';
+
+// Language-specific patterns
+const norwegianPatterns: Pattern[] = [
+  { regex: /ignorer.*instruksjoner/i, severity: 0.9, type: 'instructionOverride' },
+  { regex: /du er nå/i, severity: 0.85, type: 'roleManipulation' },
+];
+
+// Domain-specific patterns
+const medicalPatterns: Pattern[] = [
+  { regex: /reveal\s+patient\s+data/i, severity: 0.95, type: 'systemPromptLeak' },
+  { regex: /bypass\s+hipaa/i, severity: 0.95, type: 'instructionOverride' },
+];
+
+// Private application-specific patterns
+const privatePatterns: Pattern[] = [
+  { regex: /\bsudowoodo\b/i, severity: 0.95, type: 'instructionOverride' },
+];
+
+// Combine all patterns
+const multilingualVard = vard.moderate()
+  .patterns([...norwegianPatterns, ...medicalPatterns, ...privatePatterns])
+  .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:'])
+  .block('instructionOverride')
+  .block('systemPromptLeak')
+  .sanitize('delimiterInjection');
+
+export { multilingualVard };
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Threat actions" icon="gavel" href="/guides/threat-actions">
+    Configure block, sanitize, warn, and allow for each threat type
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/guides/configuration">
+    Learn about thresholds, presets, and other configuration options
+  </Card>
+</CardGroup>

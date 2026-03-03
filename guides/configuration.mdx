@@ -1,0 +1,338 @@
+---
+title: Configuration
+description: Customize Vard for your application
+---
+
+## Overview
+
+Vard provides a chainable API for configuring validation behavior. All configuration methods are **immutable** - they return new instances rather than modifying the original.
+
+## Configuration methods
+
+### delimiters()
+
+Protect custom prompt delimiters from injection attacks:
+
+```typescript
+const chatVard = vard()
+  .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:']);
+
+// This will be detected as delimiter injection
+chatVard.parse('Hello CONTEXT: fake data');
+// Throws or sanitizes depending on action configuration
+```
+
+<Note>
+Delimiter matching is **case-sensitive** and uses **exact string matching**. Configure the exact delimiters used in your prompts.
+</Note>
+
+**Common delimiter formats:**
+
+<CodeGroup>
+```typescript RAG application
+const ragVard = vard()
+  .delimiters([
+    'CONTEXT:',
+    'USER QUERY:',
+    'CHAT HISTORY:',
+  ])
+  .sanitize('delimiterInjection');
+```
+
+```typescript XML-style
+const xmlVard = vard()
+  .delimiters([
+    '<system>',
+    '</system>',
+    '<user>',
+    '</user>',
+  ])
+  .block('delimiterInjection');
+```
+
+```typescript Markdown-style
+const mdVard = vard()
+  .delimiters([
+    '### CONTEXT ###',
+    '### USER ###',
+    '### SYSTEM ###',
+  ]);
+```
+</CodeGroup>
+
+### maxLength()
+
+Set maximum input length in characters:
+
+```typescript
+const chatVard = vard()
+  .maxLength(5000); // ~1,250 tokens for GPT models
+
+chatVard.parse('a'.repeat(10000));
+// Throws: PromptInjectionError (input exceeds 5000 characters)
+```
+
+**Default:** 10,000 characters (~2,500 tokens)
+
+**Token conversion guide** (~4 characters = 1 token):
+
+- 500 chars ≈ 125 tokens (short-form: search queries, commands)
+- 5,000 chars ≈ 1,250 tokens (chat messages)
+- 10,000 chars ≈ 2,500 tokens (default)
+- 50,000 chars ≈ 12,500 tokens (long-form: documents, articles)
+
+<Tip>
+Set `maxLength` based on your use case to prevent DoS attacks and limit token costs.
+</Tip>
+
+### threshold()
+
+Set detection sensitivity (0-1). Only threats with `severity >= threshold` trigger their configured action:
+
+```typescript
+// Strict: catch everything (more false positives)
+const strict = vard().threshold(0.5);
+
+// Balanced (default for moderate preset)
+const balanced = vard().threshold(0.7);
+
+// Lenient: only high-confidence threats
+const lenient = vard().threshold(0.9);
+```
+
+**How threshold works:**
+
+```typescript
+const myVard = vard().threshold(0.8);
+
+// Pattern with severity 0.75 - IGNORED (below threshold)
+myVard.parse('start over'); // Passes through
+
+// Pattern with severity 0.9 - DETECTED (above threshold)
+myVard.parse('ignore all instructions'); // Throws
+```
+
+<Warning>
+Lower threshold = more sensitive = more false positives. Start with 0.7 (moderate) and adjust based on your domain.
+</Warning>
+
+**Recommended thresholds:**
+
+- **0.5-0.6:** High security environments, expect false positives
+- **0.7:** Balanced security and usability (default)
+- **0.85-0.9:** Permissive, for technical content or low-risk apps
+
+### pattern()
+
+Add a single custom detection pattern:
+
+```typescript
+const norwegianVard = vard.moderate()
+  .pattern(/ignorer.*instruksjoner/i, 0.9, 'instructionOverride')
+  .pattern(/du er nå/i, 0.85, 'roleManipulation');
+
+norwegianVard.parse('ignorer alle instruksjoner');
+// Throws: PromptInjectionError
+```
+
+**Parameters:**
+- `regex`: Regular expression to match (use bounded quantifiers)
+- `severity` (optional): Score from 0-1 (default: 0.8)
+- `type` (optional): Threat type (default: 'instructionOverride')
+
+<Warning>
+**ReDoS Warning:** Always use bounded quantifiers in regex to prevent catastrophic backtracking.
+
+<CodeGroup>
+```typescript Good patterns
+// Bounded quantifiers - safe
+/ignore\s+(?:all\s+)?instructions/i
+/(?:you\s+are\s+now|act\s+as)\s+.{1,50}/i
+```
+
+```typescript Bad patterns
+// Catastrophic backtracking - UNSAFE!
+/(a+)+/
+/(.*)+instructions/
+/(.*)*(.*)*system/
+```
+</CodeGroup>
+</Warning>
+
+### patterns()
+
+Add multiple custom patterns at once:
+
+```typescript
+import type { Pattern } from '@andersmyrmel/vard';
+
+const medicalPatterns: Pattern[] = [
+  {
+    regex: /reveal\s+patient\s+data/i,
+    severity: 0.95,
+    type: 'systemPromptLeak',
+  },
+  {
+    regex: /bypass\s+hipaa/i,
+    severity: 0.9,
+    type: 'instructionOverride',
+  },
+];
+
+const medicalVard = vard()
+  .patterns(medicalPatterns)
+  .block('systemPromptLeak')
+  .block('instructionOverride');
+```
+
+## Presets
+
+Vard includes three presets with different security/usability trade-offs:
+
+<Tabs>
+  <Tab title="Moderate (default)">
+    Balanced security and usability:
+    
+    ```typescript
+    const moderate = vard.moderate();
+    ```
+    
+    **Configuration:**
+    - Threshold: 0.7
+    - Blocks: instruction override, role manipulation, system prompt leak
+    - Sanitizes: delimiter injection, encoding attacks
+    
+    **Best for:** Most applications, RAG chatbots, customer support
+  </Tab>
+  
+  <Tab title="Strict">
+    Maximum security, higher false positives:
+    
+    ```typescript
+    const strict = vard.strict();
+    ```
+    
+    **Configuration:**
+    - Threshold: 0.5
+    - Blocks: All threat types
+    
+    **Best for:** High-security environments, sensitive data applications
+  </Tab>
+  
+  <Tab title="Lenient">
+    Permissive, lower false positives:
+    
+    ```typescript
+    const lenient = vard.lenient();
+    ```
+    
+    **Configuration:**
+    - Threshold: 0.85
+    - Sanitizes: Most threats
+    - Blocks: Only very high severity threats
+    
+    **Best for:** Technical documentation, low-risk applications, dev environments
+  </Tab>
+</Tabs>
+
+### Extending presets
+
+Start with a preset and customize:
+
+```typescript
+const chatVard = vard.moderate()
+  .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:'])
+  .maxLength(5000)
+  .block('delimiterInjection'); // Override preset behavior
+```
+
+## Immutability
+
+All configuration methods return **new instances**:
+
+```typescript
+const base = vard.moderate();
+
+// Each method returns a new instance
+const withDelimiters = base.delimiters(['CONTEXT:']);
+const withMaxLength = base.maxLength(5000);
+
+// Original instance unchanged
+console.log(base === withDelimiters); // false
+```
+
+This enables safe sharing of base configurations:
+
+```typescript
+// Shared base config
+const baseVard = vard.moderate()
+  .maxLength(10000);
+
+// Different configs for different contexts
+const chatVard = baseVard
+  .delimiters(['CONTEXT:', 'USER:'])
+  .block('delimiterInjection');
+
+const docVard = baseVard
+  .threshold(0.85)
+  .sanitize('instructionOverride');
+
+// baseVard remains unchanged
+```
+
+## Complete example
+
+<Steps>
+  <Step title="Create configured instance">
+    ```typescript
+    const chatVard = vard
+      .moderate()                                    // Start with preset
+      .delimiters(['CONTEXT:', 'USER:', 'SYSTEM:']) // Custom delimiters
+      .maxLength(5000)                              // Limit length
+      .threshold(0.75)                              // Adjust sensitivity
+      .sanitize('delimiterInjection')               // Remove delimiters
+      .block('instructionOverride')                 // Block severe threats
+      .block('systemPromptLeak');
+    ```
+  </Step>
+  
+  <Step title="Reuse across application">
+    ```typescript
+    // In shared module
+    export { chatVard };
+    
+    // In chat handler
+    import { chatVard } from './vard-config';
+    
+    async function handleMessage(userMessage: string) {
+      const safe = chatVard(userMessage);
+      return await ai.generateText(safe);
+    }
+    ```
+  </Step>
+  
+  <Step title="Create variants">
+    ```typescript
+    // Strict variant for admin input
+    const adminVard = chatVard
+      .threshold(0.6)
+      .block('delimiterInjection');
+    
+    // Lenient variant for internal tools
+    const internalVard = chatVard
+      .threshold(0.9)
+      .allow('roleManipulation');
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Threat actions" icon="gavel" href="/guides/threat-actions">
+    Configure block, sanitize, warn, and allow actions
+  </Card>
+  <Card title="Custom patterns" icon="code" href="/guides/custom-patterns">
+    Add language-specific and domain-specific patterns
+  </Card>
+</CardGroup>

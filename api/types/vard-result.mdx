@@ -1,0 +1,269 @@
+---
+title: "VardResult"
+description: "Discriminated union result type from safeParse"
+---
+
+`VardResult` is a discriminated union type returned by `safeParse()`, enabling type-safe error handling without try/catch blocks.
+
+## TypeScript Definition
+
+```typescript
+export type VardResult =
+  | { safe: true; data: string }
+  | { safe: false; threats: Threat[] };
+```
+
+## Success Variant
+
+When validation succeeds:
+
+<ResponseField name="safe" type="true" required>
+  Discriminator field indicating successful validation.
+  
+  TypeScript uses this to narrow the type to the success variant.
+</ResponseField>
+
+<ResponseField name="data" type="string" required>
+  The validated (and potentially sanitized) input string.
+  
+  Safe to use in your application.
+</ResponseField>
+
+```typescript
+// Success shape
+{
+  safe: true,
+  data: "Hello world"
+}
+```
+
+## Failure Variant
+
+When validation fails:
+
+<ResponseField name="safe" type="false" required>
+  Discriminator field indicating validation failure.
+  
+  TypeScript uses this to narrow the type to the failure variant.
+</ResponseField>
+
+<ResponseField name="threats" type="Threat[]" required>
+  Array of detected threats that caused validation to fail.
+  
+  Each threat contains `type`, `severity`, `match`, and `position` fields.
+  
+  See [Threat](/api/types/threat) for details.
+</ResponseField>
+
+```typescript
+// Failure shape
+{
+  safe: false,
+  threats: [
+    {
+      type: "instructionOverride",
+      severity: 0.95,
+      match: "ignore all instructions",
+      position: 0
+    }
+  ]
+}
+```
+
+## Discriminated Union Pattern
+
+TypeScript automatically narrows the type based on the `safe` property:
+
+```typescript
+import vard from '@andersmyrmel/vard';
+import type { VardResult } from '@andersmyrmel/vard';
+
+const result: VardResult = vard.safe(userInput);
+
+if (result.safe) {
+  // TypeScript knows result.data exists
+  console.log('Safe input:', result.data);
+  processInput(result.data); // No type error
+} else {
+  // TypeScript knows result.threats exists
+  console.error('Detected threats:', result.threats.length);
+  result.threats.forEach(t => {
+    console.log(`- ${t.type}: ${t.match}`);
+  });
+}
+```
+
+## Usage Examples
+
+<CodeGroup>
+```typescript Basic Type Narrowing
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+if (result.safe) {
+  // TypeScript knows result.data is string
+  console.log('Safe input:', result.data);
+  processInput(result.data);
+} else {
+  // TypeScript knows result.threats is Threat[]
+  console.error('Detected threats:', result.threats.length);
+  result.threats.forEach(t => {
+    console.log(`- ${t.type}: ${t.match}`);
+  });
+}
+```
+
+```typescript Early Return Pattern
+function processUserInput(input: string) {
+  const result = vard.safe(input);
+
+  if (!result.safe) {
+    return { error: 'Invalid input', threats: result.threats };
+  }
+
+  // TypeScript knows result.data exists here
+  return { data: result.data };
+}
+```
+
+```typescript API Response
+import vard from '@andersmyrmel/vard';
+import type { VardResult } from '@andersmyrmel/vard';
+
+app.post('/api/chat', (req, res) => {
+  const result: VardResult = vard.safe(req.body.message);
+
+  if (!result.safe) {
+    return res.status(400).json({
+      error: 'Invalid input detected',
+      threatCount: result.threats.length,
+      // Don't expose threat details to users!
+    });
+  }
+
+  // Process safe input
+  const response = await llm.chat(result.data);
+  res.json({ response });
+});
+```
+
+```typescript Switch Statement
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+switch (result.safe) {
+  case true:
+    console.log('Safe:', result.data);
+    break;
+  case false:
+    console.error('Threats:', result.threats);
+    break;
+}
+```
+
+```typescript Match Expression
+import vard from '@andersmyrmel/vard';
+
+const result = vard.safe(userInput);
+
+const output = result.safe
+  ? `Safe input: ${result.data}`
+  : `Blocked ${result.threats.length} threats`;
+
+console.log(output);
+```
+</CodeGroup>
+
+## Advantages Over Try/Catch
+
+<CodeGroup>
+```typescript safeParse (Recommended)
+import vard from '@andersmyrmel/vard';
+
+// ✅ Explicit, type-safe, no exceptions
+const result = vard.safe(userInput);
+
+if (result.safe) {
+  processInput(result.data);
+} else {
+  handleThreats(result.threats);
+}
+
+// TypeScript enforces checking both paths
+```
+
+```typescript parse (Throws)
+import vard, { PromptInjectionError } from '@andersmyrmel/vard';
+
+// ⚠️ Requires try/catch, can be forgotten
+try {
+  const safe = vard(userInput);
+  processInput(safe);
+} catch (error) {
+  if (error instanceof PromptInjectionError) {
+    handleThreats(error.threats);
+  }
+}
+
+// No compile-time guarantee you handled the error
+```
+</CodeGroup>
+
+<Tip>
+Use `safeParse()` when:
+- Building APIs that return errors as values
+- You want compile-time guarantees for error handling
+- You prefer functional error handling over exceptions
+
+Use `parse()` when:
+- You want to fail fast (throw immediately)
+- You already have error handling middleware (e.g., Express)
+- You prefer exception-based control flow
+</Tip>
+
+## Type Inference
+
+TypeScript automatically infers the type:
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+// Type inferred as VardResult
+const result = vard.safe(userInput);
+
+// No need to annotate:
+// const result: VardResult = vard.safe(userInput);
+```
+
+## Pattern Matching (Exhaustiveness)
+
+TypeScript ensures you handle both cases:
+
+```typescript
+import type { VardResult } from '@andersmyrmel/vard';
+
+function handle(result: VardResult): string {
+  if (result.safe) {
+    return result.data;
+  } else {
+    return `Error: ${result.threats.length} threats`;
+  }
+  // TypeScript error if you forget a case
+}
+```
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="safeParse Method" icon="shield-check" href="/api/methods#safeParse">
+    Non-throwing validation method
+  </Card>
+  <Card title="Threat Type" icon="triangle-exclamation" href="/api/types/threat">
+    Structure of threat objects
+  </Card>
+  <Card title="PromptInjectionError" icon="circle-exclamation" href="/api/errors">
+    Exception-based error handling
+  </Card>
+</CardGroup>
