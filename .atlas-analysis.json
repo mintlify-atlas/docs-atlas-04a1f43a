@@ -1,0 +1,120 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Vard",
+  "projectDescription": "Lightweight prompt injection detection library for LLM applications with Zod-inspired chainable API",
+  "theme": "aspen",
+  "primaryColor": "#E74C3C",
+  "lightColor": "#F39C12",
+  "darkColor": "#C0392B",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/threat-types",
+              "concepts/presets",
+              "concepts/sanitization",
+              "concepts/security-model"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-usage",
+              "guides/configuration",
+              "guides/error-handling",
+              "guides/custom-patterns",
+              "guides/threat-actions",
+              "guides/rag-example"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/performance",
+              "advanced/security-best-practices",
+              "advanced/defense-in-depth",
+              "advanced/limitations"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/vard-function",
+              "api/presets",
+              "api/builder-methods"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types/threat-type",
+              "api/types/threat-action",
+              "api/types/threat",
+              "api/types/pattern",
+              "api/types/vard-result",
+              "api/types/vard-config"
+            ]
+          },
+          {
+            "group": "Errors",
+            "pages": [
+              "api/errors/prompt-injection-error"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Zero-config prompt injection detection with moderate preset",
+    "Chainable Zod-inspired API for fluent configuration",
+    "Five threat types: instruction override, role manipulation, delimiter injection, system prompt leak, encoding attacks",
+    "Fast pattern-based detection (<0.5ms p99 latency)",
+    "Flexible threat actions: block, sanitize, warn, or allow",
+    "TypeScript-first with excellent type inference",
+    "Tiny bundle size (<10KB minified + gzipped)",
+    "ReDoS-safe patterns with iterative sanitization",
+    "Safe parsing with discriminated union results"
+  ],
+  "publicApiSurface": [
+    "vard(input?: string)",
+    "vard.safe(input: string)",
+    "vard.strict()",
+    "vard.moderate()",
+    "vard.lenient()",
+    "v (alias)",
+    "createVard()",
+    "VardBuilder.parse(input: string)",
+    "VardBuilder.safeParse(input: string)",
+    "VardBuilder.delimiters(delims: string[])",
+    "VardBuilder.pattern(regex: RegExp, severity?: number, type?: ThreatType)",
+    "VardBuilder.patterns(patterns: Pattern[])",
+    "VardBuilder.maxLength(length: number)",
+    "VardBuilder.threshold(value: number)",
+    "VardBuilder.block(threat: ThreatType)",
+    "VardBuilder.sanitize(threat: ThreatType)",
+    "VardBuilder.warn(threat: ThreatType)",
+    "VardBuilder.allow(threat: ThreatType)",
+    "VardBuilder.onWarn(callback: (threat: Threat) => void)",
+    "PromptInjectionError.getUserMessage(locale?: 'en' | 'no')",
+    "PromptInjectionError.getDebugInfo()",
+    "Types: ThreatType, ThreatAction, Threat, VardResult, Pattern, VardConfig, PresetName, CallableVard"
+  ]
+}
