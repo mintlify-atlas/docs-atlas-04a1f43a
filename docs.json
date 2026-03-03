@@ -81,7 +81,9 @@
               "api/types/threat",
               "api/types/pattern",
               "api/types/vard-result",
-              "api/types/vard-config"
+              "api/types/vard-config",
+              "api/types/callable-vard",
+              "api/types/preset-name"
             ]
           },
           {

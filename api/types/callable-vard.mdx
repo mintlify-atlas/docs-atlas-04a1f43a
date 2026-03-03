@@ -1,0 +1,129 @@
+---
+title: CallableVard
+description: Function type with chainable configuration methods
+---
+
+`CallableVard` is the type returned by all vard configuration methods. It's both a function and an object with chainable methods, enabling flexible usage patterns.
+
+## Type Definition
+
+```typescript
+type CallableVard = {
+  // Shorthand for parse() - validates input and returns safe string
+  (input: string): string;
+  
+  // Validates input and returns safe string (throws PromptInjectionError on threat)
+  parse(input: string): string;
+  
+  // Validates input without throwing - returns VardResult discriminated union
+  safeParse(input: string): VardResult;
+  
+  // Configure custom prompt delimiters to protect
+  delimiters(delims: string[]): CallableVard;
+  
+  // Add a single custom detection pattern
+  pattern(regex: RegExp, severity?: number, type?: ThreatType): CallableVard;
+  
+  // Add multiple custom detection patterns
+  patterns(patterns: Pattern[]): CallableVard;
+  
+  // Set maximum input length in characters
+  maxLength(length: number): CallableVard;
+  
+  // Set detection threshold (0-1, lower = more sensitive)
+  threshold(value: number): CallableVard;
+  
+  // Configure vard to throw error for a threat type
+  block(threat: ThreatType): CallableVard;
+  
+  // Configure vard to remove/clean a threat type
+  sanitize(threat: ThreatType): CallableVard;
+  
+  // Configure vard to categorize but not block a threat type
+  warn(threat: ThreatType): CallableVard;
+  
+  // Configure vard to completely ignore a threat type
+  allow(threat: ThreatType): CallableVard;
+  
+  // Set callback function to be called when warning-level threats are detected
+  onWarn(callback: (threat: Threat) => void): CallableVard;
+};
+```
+
+## Usage Patterns
+
+CallableVard enables multiple usage patterns:
+
+### As a Function
+
+Use the vard directly as a function (shorthand for `.parse()`):
+
+```typescript
+import vard from '@andersmyrmel/vard';
+
+const chatVard = vard.moderate().delimiters(['CONTEXT:']);
+
+// Direct call - shorthand for chatVard.parse(input)
+const safe = chatVard(userInput);
+```
+
+### As an Object
+
+Call methods explicitly:
+
+```typescript
+// Explicit parse call
+const safe = chatVard.parse(userInput);
+
+// Safe parsing without exceptions
+const result = chatVard.safeParse(userInput);
+if (result.safe) {
+  console.log(result.data);
+}
+```
+
+### Chaining Configuration
+
+All configuration methods return a new `CallableVard`, enabling fluent chaining:
+
+```typescript
+const myVard = vard()
+  .moderate()
+  .delimiters(['CONTEXT:', 'USER:'])
+  .maxLength(5000)
+  .threshold(0.8)
+  .block('instructionOverride')
+  .sanitize('delimiterInjection');
+
+// Then use it
+const safe = myVard(userInput);
+```
+
+## Immutability
+
+Every configuration method returns a **new** `CallableVard` instance. The original is never modified:
+
+```typescript
+const base = vard.moderate();
+const strict = base.threshold(0.5);  // Returns new instance
+const lenient = base.threshold(0.9); // Returns new instance
+
+// base is unchanged (still threshold: 0.7)
+```
+
+## Related Types
+
+<CardGroup cols={2}>
+  <Card title="VardBuilder" icon="wrench" href="/api/builder-methods">
+    Implementation class (use CallableVard type instead)
+  </Card>
+  <Card title="VardResult" icon="code-branch" href="/api/types/vard-result">
+    Result type from safeParse()
+  </Card>
+  <Card title="Pattern" icon="brackets-curly" href="/api/types/pattern">
+    Custom pattern configuration
+  </Card>
+  <Card title="Threat" icon="shield-exclamation" href="/api/types/threat">
+    Individual threat detection result
+  </Card>
+</CardGroup>

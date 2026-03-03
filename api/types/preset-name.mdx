@@ -1,0 +1,125 @@
+---
+title: PresetName
+description: Union type of available preset configurations
+---
+
+`PresetName` is a string literal union type representing the three built-in security presets available in Vard.
+
+## Type Definition
+
+```typescript
+type PresetName = "strict" | "moderate" | "lenient";
+```
+
+## Preset Values
+
+<AccordionGroup>
+  <Accordion title="strict" icon="shield-check">
+    **Threshold:** 0.5 (most sensitive)
+    
+    **Default Actions:**
+    - All threat types: `block`
+    
+    **Use Cases:**
+    - High-security environments
+    - Admin tools
+    - Financial applications
+    - Sensitive data handling
+    
+    **Trade-offs:**
+    - Higher false positive rate (~5%)
+    - May block legitimate technical content
+  </Accordion>
+
+  <Accordion title="moderate" icon="shield-halved">
+    **Threshold:** 0.7 (balanced)
+    
+    **Default Actions:**
+    - `instructionOverride`: `block`
+    - `roleManipulation`: `block`
+    - `systemPromptLeak`: `block`
+    - `delimiterInjection`: `sanitize`
+    - `encoding`: `sanitize`
+    
+    **Use Cases:**
+    - General chatbots
+    - Customer support AI
+    - RAG applications
+    - Content moderation
+    
+    **Trade-offs:**
+    - Low false positive rate (~1%)
+    - Good balance of security and usability
+    - **This is the default preset**
+  </Accordion>
+
+  <Accordion title="lenient" icon="shield">
+    **Threshold:** 0.85 (least sensitive)
+    
+    **Default Actions:**
+    - High severity threats: `block`
+    - Most threats: `sanitize`
+    
+    **Use Cases:**
+    - Creative writing tools
+    - Technical documentation processing
+    - Educational chatbots
+    - Low-risk applications
+    
+    **Trade-offs:**
+    - Very low false positive rate (&lt;0.5%)
+    - May miss some attacks
+    - Sanitizes more, blocks less
+  </Accordion>
+</AccordionGroup>
+
+## Usage
+
+Use PresetName with the preset factory methods:
+
+```typescript
+import vard from '@andersmyrmel/vard';
+import type { PresetName } from '@andersmyrmel/vard';
+
+// Direct usage
+const strict = vard.strict();
+const moderate = vard.moderate();
+const lenient = vard.lenient();
+
+// Dynamic preset selection
+function getVard(preset: PresetName) {
+  switch (preset) {
+    case 'strict':
+      return vard.strict();
+    case 'moderate':
+      return vard.moderate();
+    case 'lenient':
+      return vard.lenient();
+  }
+}
+```
+
+## Comparison
+
+| Preset | Threshold | False Positives | Security Level | Best For |
+| --- | --- | --- | --- | --- |
+| `strict` | 0.5 | Higher (~5%) | Highest | High-security, admin |
+| `moderate` | 0.7 | Low (~1%) | Balanced | General chatbots |
+| `lenient` | 0.85 | Very low (&lt;0.5%) | Lower | Creative, low-risk |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Presets API" icon="sliders" href="/api/presets">
+    Preset factory methods
+  </Card>
+  <Card title="Presets Concept" icon="shield-halved" href="/concepts/presets">
+    Choosing the right preset
+  </Card>
+  <Card title="VardConfig" icon="gear" href="/api/types/vard-config">
+    Full configuration interface
+  </Card>
+  <Card title="Threshold" icon="gauge" href="/api/builder-methods">
+    Custom threshold configuration
+  </Card>
+</CardGroup>
